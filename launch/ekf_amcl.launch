@@ -1,0 +1,19 @@
+<launch>
+
+<node pkg="robot_pose_ekf" type="robot_pose_ekf" name="robot_pose_ekf">
+  <param name="output_frame" value="map"/>
+  <param name="base_footprint_frame" value="base_footprint"/>
+  <param name="freq" value="30.0"/>
+  <param name="sensor_timeout" value="1.0"/>  
+  <param name="odom_used" value="true"/>
+  <param name="odom_topic" value="amcl_pose"/>
+  <param name="imu_used" value="false"/>
+  <param name="vo_used" value="true"/>
+  <param name="vo_topic" value="odom"/>
+
+</node>
+
+<node pkg="rviz" type="rviz" name="rviz" args="-d /home/eco/rviz_config/ekf.rviz"/>
+
+</launch>
+
