@@ -52,19 +52,19 @@ namespace estimation
 {
   // constructor
   OdomEstimationNode::OdomEstimationNode()
-    : odom_active_(false),
+    : amcl_active_(false),
       imu_active_(false),
       vo_active_(false),
       gps_active_(false),
-      odom_initializing_(false),
+      amcl_initializing_(false),
       imu_initializing_(false),
       vo_initializing_(false),
       gps_initializing_(false),
-      odom_covariance_(6),
+      amcl_covariance_(6),
       imu_covariance_(3),
       vo_covariance_(6),
       gps_covariance_(3),
-      odom_callback_counter_(0),
+      amcl_callback_counter_(0),
       imu_callback_counter_(0),
       vo_callback_counter_(0),
       gps_callback_counter_(0),
@@ -77,8 +77,8 @@ namespace estimation
     nh_private.param("output_frame", output_frame_, std::string("odom_combined"));
     nh_private.param("base_footprint_frame", base_footprint_frame_, std::string("base_footprint"));
     nh_private.param("sensor_timeout", timeout_, 1.0);
-    nh_private.param("odom_used", odom_used_, true);
-    nh_private.param("odom_topic", odom_topic, std::string("odom"));
+    nh_private.param("amcl_used", amcl_used_, true);
+    nh_private.param("amcl_topic", amcl_topic, std::string("amcl_pose"));
     nh_private.param("imu_used",  imu_used_, true);
     nh_private.param("vo_used",   vo_used_, true);
     nh_private.param("vo_topic", vo_topic, std::string("vo"));
@@ -106,17 +106,17 @@ namespace estimation
     pose_pub_ = nh_private.advertise<geometry_msgs::PoseWithCovarianceStamped>("odom_combined", 10);
     //publish the combined Path
     combined_path_pub_ = nh_private.advertise<nav_msgs::Path>("path_combined", 10);
-    amcl_path_pub_ = nh_private.advertise<nav_msgs::Path>("amcl_path", 10);
-    vo_path_pub_ = nh_private.advertise<nav_msgs::Path>("vo_path", 10);
+    //amcl_path_pub_ = nh_private.advertise<nav_msgs::Path>("amcl_path", 10);
+    //vo_path_pub_ = nh_private.advertise<nav_msgs::Path>("vo_path", 10);
     // initialize
     filter_stamp_ = Time::now();
 
-    // subscribe to odom messages
-    if (odom_used_){
-      ROS_DEBUG("Odom sensor can be used");
-      odom_sub_ = nh.subscribe(odom_topic, 10, &OdomEstimationNode::poseCallback, this);
+    // subscribe to amcl_pose messages
+    if (amcl_used_){
+      ROS_DEBUG("amcl sensor can be used");
+      amcl_sub_ = nh.subscribe(amcl_topic, 10, &OdomEstimationNode::poseCallback, this);
     }
-    else ROS_DEBUG("Odom sensor will NOT be used");
+    else ROS_DEBUG("amcl will NOT be used");
 
     // subscribe to imu messages
     if (imu_used_){
@@ -144,7 +144,7 @@ namespace estimation
 
     if (debug_){
       // open files for debugging
-      odom_file_.open("/tmp/odom_file.txt");
+      amcl_file_.open("/tmp/amcl_file.txt");
       imu_file_.open("/tmp/imu_file.txt");
       vo_file_.open("/tmp/vo_file.txt");
       gps_file_.open("/tmp/gps_file.txt");
@@ -162,7 +162,7 @@ namespace estimation
 
     if (debug_){
       // close files for debugging
-      odom_file_.close();
+      amcl_file_.close();
       imu_file_.close();
       gps_file_.close();
       vo_file_.close();
@@ -174,47 +174,47 @@ namespace estimation
 
 
 
-  // callback function for odom data
+  // callback function for amcl data
   void OdomEstimationNode::poseCallback(const PoseConstPtr& amcl_pose)
   {
-    odom_callback_counter_++;
+    amcl_callback_counter_++;
 
-    ROS_DEBUG("Odom callback at time %f ", ros::Time::now().toSec());
-    assert(odom_used_);
+    ROS_DEBUG("amcl_pose callback at time %f ", ros::Time::now().toSec());
+    assert(amcl_used_);
 
     // receive data 
-    odom_stamp_ = amcl_pose->header.stamp;
-    odom_time_  = Time::now();
+    amcl_stamp_ = amcl_pose->header.stamp;
+    amcl_time_  = Time::now();
     Quaternion q;
     tf::quaternionMsgToTF(amcl_pose->pose.pose.orientation, q);
-    odom_meas_  = Transform(q, Vector3(amcl_pose->pose.pose.position.x, amcl_pose->pose.pose.position.y, 0));
+    amcl_meas_  = Transform(q, Vector3(amcl_pose->pose.pose.position.x, amcl_pose->pose.pose.position.y, 0));
     // covariance can not be zero , for test can adjust here
     for (unsigned int i=0; i<6; i++)
       for (unsigned int j=0; j<6; j++)
-        odom_covariance_(i+1, j+1) = 0.05*odom_callback_counter_;//odom_covariance_(i+1, j+1) = amcl_pose->pose.covariance[6*i+j];
+        amcl_covariance_(i+1, j+1) = amcl_pose->pose.covariance[6*i+j];
    
-    my_filter_.addMeasurement(StampedTransform(odom_meas_.inverse(), odom_stamp_, base_footprint_frame_, "wheelodom"), odom_covariance_);
-    // activate odom
-    if (!odom_active_) {
-      if (!odom_initializing_){
-	        odom_initializing_ = true;
-	        odom_init_stamp_ = odom_stamp_;
-	        ROS_INFO("Initializing Odom sensor");      
+    my_filter_.addMeasurement(StampedTransform(amcl_meas_.inverse(), amcl_stamp_, base_footprint_frame_, "amcl"), amcl_covariance_);
+    // activate amcl
+    if (!amcl_active_) {
+      if (!amcl_initializing_){
+	        amcl_initializing_ = true;
+	        amcl_init_stamp_ = amcl_stamp_;
+	        ROS_INFO("Initializing amcl");      
       }
-      if ( filter_stamp_ >= odom_init_stamp_){
-	          odom_active_ = true;
-	          odom_initializing_ = false;
-	          ROS_INFO("Odom sensor activated");      
+      if ( filter_stamp_ >= amcl_init_stamp_){
+	          amcl_active_ = true;
+	          amcl_initializing_ = false;
+	          ROS_INFO("amcl activated");      
       }
-      else ROS_DEBUG("Waiting to activate Odom, because Odom measurements are still %f sec in the future.", 
-		    (odom_init_stamp_ - filter_stamp_).toSec());
+      else ROS_DEBUG("Waiting to activate amcl, because amcl measurements are still %f sec in the future.", 
+		    (amcl_init_stamp_ - filter_stamp_).toSec());
     }
     
     if (debug_){
       // write to file
       double tmp, yaw;
-      odom_meas_.getBasis().getEulerYPR(yaw, tmp, tmp);
-      odom_file_<< fixed <<setprecision(5) << ros::Time::now().toSec() << " " << odom_meas_.getOrigin().x() << " " << odom_meas_.getOrigin().y() << "  " << yaw << "  " << endl;
+      amcl_meas_.getBasis().getEulerYPR(yaw, tmp, tmp);
+      amcl_file_<< fixed <<setprecision(5) << ros::Time::now().toSec() << " " << amcl_meas_.getOrigin().x() << " " << amcl_meas_.getOrigin().y() << "  " << yaw << "  " << endl;
     }
   };
 
@@ -306,7 +306,7 @@ namespace estimation
      // covariance can not be zero , for test can adjust here
     for (unsigned int i=0; i<6; i++)
       for (unsigned int j=0; j<6; j++)
-        vo_covariance_(i+1, j+1) = 0.05*vo_callback_counter_;//vo_covariance_(i+1, j+1) = vo->pose.covariance[6*i+j]; // covariance can not be zero!
+        vo_covariance_(i+1, j+1) = vo->pose.covariance[6*i+j]; // covariance can not be zero!
     my_filter_.addMeasurement(StampedTransform(vo_meas_.inverse(), vo_stamp_, base_footprint_frame_, "vo"), vo_covariance_);
     
     // activate vo
@@ -388,19 +388,19 @@ namespace estimation
     ROS_DEBUG("Spin function at time %f", ros::Time::now().toSec());
 
     // check for timing problems
-    if ( (odom_initializing_ || odom_active_) && (imu_initializing_ || imu_active_) ){
-      double diff = fabs( Duration(odom_stamp_ - imu_stamp_).toSec() );
-      if (diff > 1.0) ROS_ERROR("Timestamps of odometry and imu are %f seconds apart.", diff);
+    if ( (amcl_initializing_ || amcl_active_) && (imu_initializing_ || imu_active_) ){
+      double diff = fabs( Duration(amcl_stamp_ - imu_stamp_).toSec() );
+      if (diff > 1.0) ROS_ERROR("Timestamps of amcl and imu are %f seconds apart.", diff);
     }
     
     // initial value for filter stamp; keep this stamp when no sensors are active
     filter_stamp_ = Time::now();
     
     // check which sensors are still active
-    if ((odom_active_ || odom_initializing_) && 
-        (Time::now() - odom_time_).toSec() > timeout_){
-      odom_active_ = false; odom_initializing_ = false;
-      ROS_INFO("Odom sensor not active any more");
+    if ((amcl_active_ || amcl_initializing_) && 
+        (Time::now() - amcl_time_).toSec() > timeout_){
+      amcl_active_ = false; amcl_initializing_ = false;
+      ROS_INFO("amcl not active any more");
     }
     if ((imu_active_ || imu_initializing_) && 
         (Time::now() - imu_time_).toSec() > timeout_){
@@ -421,10 +421,10 @@ namespace estimation
 
     
     // only update filter when one of the sensors is active
-    if (odom_active_ || imu_active_ || vo_active_ || gps_active_){
+    if (amcl_active_ || imu_active_ || vo_active_ || gps_active_){
       
       // update filter at time where all sensor measurements are available
-      if (odom_active_)  filter_stamp_ = min(filter_stamp_, odom_stamp_);
+      if (amcl_active_)  filter_stamp_ = min(filter_stamp_, amcl_stamp_);
       if (imu_active_)   filter_stamp_ = min(filter_stamp_, imu_stamp_);
       if (vo_active_)    filter_stamp_ = min(filter_stamp_, vo_stamp_);
       if (gps_active_)  filter_stamp_ = min(filter_stamp_, gps_stamp_);
@@ -433,7 +433,7 @@ namespace estimation
       // update filter
       if ( my_filter_.isInitialized() )  {
         bool diagnostics = true;
-        if (my_filter_.update(odom_active_, imu_active_,gps_active_, vo_active_,  filter_stamp_, diagnostics)){
+        if (my_filter_.update(amcl_active_, imu_active_,gps_active_, vo_active_,  filter_stamp_, diagnostics)){
           
           // output most recent estimate and relative covariance
           my_filter_.getEstimate(output_);
@@ -477,12 +477,12 @@ namespace estimation
         my_filter_.initialize(init_meas_, gps_stamp_);
         ROS_INFO("Kalman filter initialized with gps and imu measurement");
       }	
-      else if ( odom_active_ && gps_active_ && !my_filter_.isInitialized()) {
-	      Quaternion q = odom_meas_.getRotation();
+      else if ( amcl_active_ && gps_active_ && !my_filter_.isInitialized()) {
+	      Quaternion q = amcl_meas_.getRotation();
         Vector3 p = gps_meas_.getOrigin();
         Transform init_meas_ = Transform(q, p);
         my_filter_.initialize(init_meas_, gps_stamp_);
-        ROS_INFO("Kalman filter initialized with gps and odometry measurement");
+        ROS_INFO("Kalman filter initialized with gps and amcl measurement");
       }
       else if ( vo_active_ && gps_active_ && !my_filter_.isInitialized()) {
 	      Quaternion q = vo_meas_.getRotation();
@@ -491,9 +491,9 @@ namespace estimation
         my_filter_.initialize(init_meas_, gps_stamp_);
         ROS_INFO("Kalman filter initialized with gps and visual odometry measurement");
       }
-      else if ( odom_active_  && !gps_used_ && !my_filter_.isInitialized()){
-        my_filter_.initialize(odom_meas_, odom_stamp_);
-        ROS_INFO("Kalman filter initialized with odom measurement");
+      else if ( amcl_active_  && !gps_used_ && !my_filter_.isInitialized()){
+        my_filter_.initialize(amcl_meas_, amcl_stamp_);
+        ROS_INFO("Kalman filter initialized with amcl measurement");
       }
       /*else if ( vo_active_ && !gps_used_ && !my_filter_.isInitialized()){
         my_filter_.initialize(vo_meas_, vo_stamp_);
@@ -507,11 +507,11 @@ bool OdomEstimationNode::getStatus(robot_pose_ekf::GetStatus::Request& req, robo
 {
   stringstream ss;
   ss << "Input:" << endl;
-  ss << " * Odometry sensor" << endl;
-  ss << "   - is "; if (!odom_used_) ss << "NOT "; ss << "used" << endl;
-  ss << "   - is "; if (!odom_active_) ss << "NOT "; ss << "active" << endl;
-  ss << "   - received " << odom_callback_counter_ << " messages" << endl;
-  ss << "   - listens to topic " << odom_sub_.getTopic() << endl;
+  ss << " * amcl" << endl;
+  ss << "   - is "; if (!amcl_used_) ss << "NOT "; ss << "used" << endl;
+  ss << "   - is "; if (!amcl_active_) ss << "NOT "; ss << "active" << endl;
+  ss << "   - received " << amcl_callback_counter_ << " messages" << endl;
+  ss << "   - listens to topic " << amcl_sub_.getTopic() << endl;
   ss << " * IMU sensor" << endl;
   ss << "   - is "; if (!imu_used_) ss << "NOT "; ss << "used" << endl;
   ss << "   - is "; if (!imu_active_) ss << "NOT "; ss << "active" << endl;
